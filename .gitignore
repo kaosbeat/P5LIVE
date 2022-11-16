@@ -1,6 +1,5 @@
 /extras
 .DS_Store
-/data
 /sandbox
 /_bu
 /packages
@@ -9,3 +8,7 @@
 /cocoding-server/package-lock.json
 /package-lock.json
 /lib
+/electronjs
+/_stats
+/_backups
+

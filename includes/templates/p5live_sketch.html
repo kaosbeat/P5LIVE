@@ -6,27 +6,33 @@
 	<style type="text/css">
 		body{
 			margin:0;
+			width:100vw;
+			height:100vh;
+			overflow:hidden;
+			cursor:crosshair;
 		}
 		canvas{
 			width:100vw;
 			height:100vh;
 			margin:0;
-
 		}
-		#catchfocus{
-			position: fixed;
-			width:100vw;
-			height:100vh;
-			top:0;
-			left:0;
-			z-index:99;
+		input{
+			cursor:crosshair;
 		}
 	</style>
+	<script src="includes/js/loadjs.min.js"></script>
+
 	<script type="text/javascript">
 		var p5p = parent.document;
 		var p5console = p5p.getElementById('p5-console');
 		var p5code = p5p.getElementById('p5-code');
-		var p5consoleTimer, p5consoleDelay = 2000;
+		var p5consoleTimer, p5consoleDelay = 2000, consoleTimer, consoleVisible = false;
+		var pmsg = '';
+		var chalkboard;
+
+		function pingReady(scriptName, scriptCode, scriptCallback){
+			window.parent.pongReady(scriptName, scriptCode, scriptCallback);
+		}
 
 		// clear console if all good
 		if(p5console != null){
@@ -36,9 +42,10 @@
 
 		// pass errors to parent
 		window.onerror = function myErrorHandler(errorMsg, url, lineNumber) {
+			p5console.style.display = 'block'
 			p5console.value = errorMsg; // lineNumber +" / "+
 			p5console.style.background = "#000";
-			markLine(lineNumber);            
+			markLine(lineNumber);
 			return false;
 		}
 
@@ -47,16 +54,16 @@
 			if(n != null){
 				myCustomData = { 'lineNumber': n }
 			}
-			var event = new CustomEvent('myEvent', { detail: myCustomData });
+			var event = new CustomEvent('p5Status', { detail: myCustomData });
 			window.parent.document.dispatchEvent(event);
 		}
 
-		var statusTimer; 
+		var statusTimer;
 		function sketchStatus(){
 			if(p5.instance._setupDone){
 				clearTimeout(statusTimer);
 				var myCustomData = {'status': true};
-				var event = new CustomEvent('myEvent', { detail: myCustomData });
+				var event = new CustomEvent('p5Status', { detail: myCustomData });
 				window.parent.document.dispatchEvent(event);
 			}else{
 				statusTimer = setTimeout(function(){sketchStatus();}, 50);
@@ -67,25 +74,120 @@
 		var console = {
 			log: function(m){
 				if(m != "p5.RendererGL: enabled webgl context"){
-					p5console.value = m;
-					p5console.style.opacity = .75;
-					p5console.style.background = "#000";
-					p5console.style.borderTop = "1px solid #444";
-					p5console.style.pointerEvents = "all";
-					p5code.style.height = "calc(100vh - 40px)";
-					window.parent.console.log(m); // also send to parent console!
-					p5consoleTimer = setTimeout(function(){clearConsole();}, p5consoleDelay);
+					consoleMessage(m, .1);
+
+					// only send to window console if unique!
+					if(m != pmsg){
+						window.parent.console.log(m); // also send to parent console!
+						if(window.parent.syncdataConsoleMsg !== undefined){
+							window.parent.syncdataConsoleMsg(m); // also send to syncdata console!
+						}
+						pmsg = m;
+					}
+					clearTimeout(p5consoleTimer);
+					// p5consoleTimer = setTimeout(function(){clearConsole();}, p5consoleDelay);
 				}
-			}       
+			}
 		};
 
 		function clearConsole(){
-			p5console.value = "";
-			p5console.style.background = "none";
-			p5console.style.borderTop = "none";
-			p5console.style.pointerEvents = "none";
-			p5code.style.height = "100vh";
+			p5console.value = '';
+			p5console.style.display = 'none';
+			// window.parent.resizeEditor();
 		}
+
+		function consoleMessage(msg, timeDelay){
+			if(typeof msg === 'object'){
+				msg = JSON.stringify(msg);
+			}
+			p5console.value = msg;
+			if(consoleVisible == false){
+				p5console.style.display = 'block';
+				// window.parent.resizeEditor();
+				consoleVisible = true;
+			}
+			if(timeDelay != undefined && timeDelay != 0){
+				if(consoleTimer != undefined){
+					clearTimeout(consoleTimer);
+				}
+				consoleTimer = setTimeout(consoleHide, timeDelay*1000);
+			}
+		}
+
+
+
+		function consoleHide(){
+			if(consoleTimer != undefined){
+				clearTimeout(consoleTimer);
+			}
+			p5console.value = '';
+			p5console.style.display = 'none';
+			// window.parent.resizeEditor();
+			consoleVisible = false;
+		}
+
+
+		// iFrame got focus()?!
+		document.onkeydown = function(event){
+			// on CONTROL, return focus and activate CONTROL
+			if(event.keyCode == 17){
+				window.parent.focus();
+				window.setTimeout(function(){window.parent.dispatchEvent(new KeyboardEvent('keydown',{'keyCode':17}));}, 100);
+			}
+		}
+
+		// test if focus lost
+		window.onfocus = function() {
+		  // console.log('stole lost!');
+		  loop();
+		};
+
+		// forward mouse/key events to parent
+		document.addEventListener('mousemove', forwardMouse);
+		document.addEventListener('mouseup', forwardMouse);
+		document.addEventListener('mousedown', forwardMouse);
+
+		function forwardMouse(event){
+			window.parent.passMouseClick(event);
+		}
+
+		document.addEventListener('keydown', forwardKey);
+		document.addEventListener('keyup', forwardKey);
+
+		function forwardKey(event){
+			window.parent.sendKey(event);
+		}
+
+		// sync data
+		function sendData(obj){
+			window.parent.syncdataSend(obj);
+		}
+
+		function getData(obj){
+			// placeholder function;
+		}
+
+		function parseData(obj){
+			// placeholder function;
+		}
+
+
+		// chalkboard
+		var p5live = {};
+		p5live.chalkboard = function(chalkboardSketch){
+			if(parent.chalkboardInit){
+				// console.log(JSON.stringify(parent.chalkboardFrame.layer))
+				let chalkboard = parent.chalkboardFrame.chalkboard;
+				let chalkboardSelected = parent.chalkboardFrame.chalkboardSel;
+				if(chalkboardSketch !== undefined){
+					chalkboardSelected = Math.floor(chalkboardSketch)%10;
+				}
+				return chalkboard[chalkboardSelected];
+			}else{
+				return createGraphics(4, 4);
+			}
+		}
+
 	</script>
 </head>
 <body>
